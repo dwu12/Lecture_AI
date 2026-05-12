@@ -1,0 +1,41 @@
+A  images that really is focusing on developing this the thing we're still doing research we're open sourcing we are publishing we're just getting started we're hiring too and and and basically you know solve all the problems in the real world that AI currently really is not so good for and the hope is that you know maybe hierarchical JAPA
+A  hierarchical planning will allow us to train sort of universal causal models of any complex phenomenon and be the basis for you know any intelligent system in the future and thank you very much
+B  Thank you very much Professor Lacan.
+B  We can thank Professor Lacan.
+B  And now perhaps some questions.
+A  Sure.
+B  Okay, thank you.
+B  Okay,
+B  I have a first question.
+B  The fact that you accepted the invitation and applied mathematics webinar is my sense the best proof of the importance of this science.
+B  Do you think that there are enough mathematicians dedicating their research to AI?
+B  Or do
+A  No.
+B  you think that AI needs more mathematicians?
+A  Yes.
+A  So,
+A  you know, my academic position is with the Courant Institute,
+A  which is actually since September is a school within New York University.
+A  It's a school that regroups mathematics,
+A  pure and applied.
+A  Courant, of course, is famous for applied mathematics.
+A  Computer science and data science.
+A  Okay, it's a standalone school. It used to be part of the arts and science school, but now it's a separate school,
+A  which basically is because of the importance of both.
+A  Mathematics, particularly applied mathematics,
+A  computer science,
+A  particularly with AI and data science,
+A  which is really applied AI if you want,
+A  right?
+A  So NYU has decided that this whole field is so important that it should have a dedicated school separate from, you know, the law school and the business school and the arts and science and the engineering school.
+A  I've been personally,
+A  because being part of Co-Op,
+@  I've been part of Co-Op.
+A  Although I'm part of the computer science department I've had a lot of interactions and contacts and even students from applied applied math and and you know for many years I was on the science advisory board of the Institute for Pure and Applied Mathematics at UCLA and I've always tried to bring in
+A  interest from mathematicians to machine learning and deep learning in particular because the mathematical problems they are really in my opinion very interesting but also very complicated and traditionally people interested in machine learning who have you know a bit of a interest and background in mathematics have focused in the past on simpler
+A  machine learning paradigms think like kernel methods support vector machines Bayesian inference and things like that where the theory is easier to write neural nets are messy and so theorists have reluctantly approached deep learning because it's very it's very complicated right the functions we optimize are non-convex
+A  So you can't prove anything.
+A  We use stochastic gradient, which for an optimization person is really,
+A  really hard to model the behavior of all the traditional tools in optimization and criteria that we use to analyze optimization algorithms go out the window because in machine learning we don't care about precise optimization because that creates overfitting. Even statisticians and probabilists are baffled.
+A  by a phenomenon called double descent so traditionally every textbook in statistics tell you if you try to fit a function to a bunch of points you don't want too many parameters because your system is going to overfit right it's going to you know if you have 10 points and you use an 11th degree polynomial your polynomial is going to go to every point exactly but between the points it's going to go completely wild right so as a as a
+A  approximation for noisy signal for functional approximation you need models with a small number of parameters that argument turns out to be completely false empirically initially okay and now we need to understand this theoretically so neural nets are way over parameterized the number of parameters in neural nets is enormous compared to the
