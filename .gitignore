@@ -2,3 +2,4 @@
 .venv
 src/audio_processing/
 src/assets/
+src/test/
