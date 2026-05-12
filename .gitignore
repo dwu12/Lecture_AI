@@ -1,4 +1,4 @@
 .env
 .venv
-.src.audio_processing
-.src.assets
+src/audio_processing/
+src/assets/
