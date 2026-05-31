@@ -1,5 +1,7 @@
 # Lecture AI
 
+[中文](./README_cn.md) | [English](./README.md)
+
 An AI-powered lecture note-taking assistant. Upload or record lecture audio and get structured notes with task extraction — powered by OpenAI Whisper, DeepAgents, and a multi-agent pipeline.
 
 ## Features
@@ -86,7 +88,7 @@ ROOT_DIR="Your ROOT DIR"
 
 3. Run the application:
 ```bash
-streamlit run app.py
+streamlit run app.py        
 ```
 
 ## Usage
