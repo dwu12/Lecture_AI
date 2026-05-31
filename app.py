@@ -1,200 +1,273 @@
 import streamlit as st
 import tempfile
 import os
+import io
+import base64
 from pathlib import Path
+from datetime import datetime
+from pydub import AudioSegment
 
-from src.graph.builder import build_lecture_pipeline_graph
-from src.graph.state import LecturePipelineState
 
+from src.utils import initialize_notepad, read_markdown, process_raw_data
+from src.agent import get_agent
+import uuid 
+
+# ─────────────────────────────────────────────
+# Config
+# ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Lecture AI - Transcription Pipeline",
+    page_title="Lecture AI",
     page_icon="🎓",
     layout="wide"
 )
 
-# Title
-st.title("🎓 Lecture AI - Transcription Pipeline")
-st.markdown("Upload audio, get transcribed lecture notes and tasks extracted as PDF.")
+LECTURE_RECORDING_DIR = "./lecture_recording"
+STATUS_FILE = "./lecture_recording_status.md"
 
-# Initialize session state
-if "pipeline_graph" not in st.session_state:
-    st.session_state.pipeline_graph = build_lecture_pipeline_graph()
-if "results" not in st.session_state:
-    st.session_state.results = None
-if "processing" not in st.session_state:
-    st.session_state.processing = False
+# ─────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────
 
-# Sidebar: Configuration
+def ensure_lecture_folders(voice_name: str) -> dict:
+    """
+    Ensure all subfolders exist for a lecture project.
+    Creates: raw/, chunks/, asr/ under lecture_recording/{voice_name}/
+
+    Returns dict with paths for convenience.
+    """
+    base = Path(LECTURE_RECORDING_DIR) / voice_name
+    folders = {
+        "base": base,
+        "raw": base / "raw",
+        "chunks": base / "chunks",
+        "asr": base / "asr",
+    }
+    for folder in folders.values():
+        folder.mkdir(parents=True, exist_ok=True)
+    return folders
+
+
+def save_audio_file(uploaded_file, voice_name: str) -> str:
+    """Save uploaded file to lecture_recording/{voice_name}/raw/"""
+
+    if voice_name: 
+        folders = ensure_lecture_folders(voice_name)
+        suffix = Path(uploaded_file.name).suffix
+        filename = f"{voice_name}_raw{suffix}"
+
+    else: 
+        file_name = uploaded_file.name.split('.')[0]
+        folders = ensure_lecture_folders(file_name)
+        filename = uploaded_file.name
+    
+    filepath = folders["raw"] / filename
+    filepath.write_bytes(uploaded_file.getvalue())
+    return str(filepath)
+
+
+def save_recorded_audio(audio_data, voice_name: str, format: str = "webm") -> str:
+    """Save recorded audio to lecture_recording/{voice_name}/raw/"""
+    folders = ensure_lecture_folders(voice_name)
+
+    suffix = ".mp3" if format == "mp3" else ".webm"
+    filename = f"{voice_name}_raw{suffix}"
+    filepath = folders["raw"] / filename
+
+    audio_bytes = audio_data.read() 
+    try:
+        # 2. Load the raw WAV bytes into Pydub
+        audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
+        
+        # 3. Export the file locally as an MP3
+        audio_segment.export(filepath, format="mp3", bitrate="192k")
+        
+        # 4. Success confirmations & local playback
+        st.success(f"Successfully saved as `{filepath}`!")
+            
+    except Exception as e:
+        st.error(f"An error occurred during conversion: {e}")
+        st.info("Make sure FFmpeg is properly installed on your system.")
+
+    filepath.write_bytes(audio_bytes)
+    return str(filepath)
+
+
+def get_voice_folders():
+    """Get list of existing voice/project folders."""
+    root = Path(LECTURE_RECORDING_DIR)
+    if not root.exists():
+        return []
+    return sorted([f.name for f in root.iterdir() if f.is_dir() and not f.name.startswith('.')])
+
+
+def get_summary_path(voice_name: str):
+    """Get paths for summary files."""
+    base = Path(LECTURE_RECORDING_DIR) / voice_name
+    return {
+        "summary_md": base / f"{voice_name}_summary.md",
+        "summary_pdf": base / f"{voice_name}_summary.pdf",
+        "formatted": base / f"{voice_name}_formatted.md",
+    }
+
+
+# ─────────────────────────────────────────────
+# Session state
+# ─────────────────────────────────────────────
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    st.session_state.thread_id = str(uuid.uuid4()).replace('-',"")
+    st.session_state.agent = get_agent()
+
+if "processing_done" not in st.session_state:
+    st.session_state.processing_done = {}
+
+if "current_voice_name" not in st.session_state:
+    st.session_state.current_voice_name = None
+
+
+# ─────────────────────────────────────────────
+# Sidebar
+# ─────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Configuration")
 
-    st.subheader("Audio Preprocessing")
+    # Input method: upload or record
+    input_method = st.radio(
+        "Input method:",
+        options=["📤 Upload Audio", "🎙️ Record Voice"],
+        horizontal=True
+    )
+
+    if input_method == "📤 Upload Audio":
+        uploaded_file = st.file_uploader(
+            "Upload audio file",
+            type=["mp3", "wav", "mp4", "m4a", "flac"]
+        )
+    else:
+        st.write("🎙️ Record your voice:")
+        audio_data = st.audio_input("Record")
+
+        # Voice / Lecture name (shared)
+        voice_name = st.text_input(
+            "Voice / Lecture name (Required)",
+            placeholder="e.g., lecun_world_model",
+            help="This will be the folder name for your lecture",
+            
+        )
+
+        if audio_data is not None:
+            st.audio(audio_data)
+
+    st.divider()
+
+    # Optional: Lecturer name
+    st.subheader("📋 Optional Info")
+    lecturer_name = st.text_input(
+        "Lecturer / Instructor name",
+        placeholder="Optional"
+    )
+
+    # Chunk size
     max_chunk_size = st.slider(
         "Max chunk size (MB)",
-        min_value=5,
-        max_value=100,
-        value=20,
-        help="Split audio if file exceeds this size"
-    )
-    max_duration = st.number_input(
-        "Max duration (minutes, 0 = no limit)",
         min_value=0,
-        max_value=180,
-        value=0,
-        help="Slice audio to this duration"
-    )
-    max_duration = max_duration if max_duration > 0 else None
-
-    st.subheader("Processing")
-    show_raw_transcript = st.checkbox("Show raw transcript", value=True)
-    show_speaker_transcript = st.checkbox("Show speaker-aware transcript", value=True)
-
-# Main content area
-col1, col2 = st.columns([1, 1])
-
-# Left column: Upload and Process
-with col1:
-    st.header("📤 Upload Audio")
-
-    uploaded_file = st.file_uploader(
-        "Choose an audio file",
-        type=["mp3", "wav", "mp4", "m4a", "flac"],
-        help="Upload lecture audio in any common format"
+        max_value=20,
+        value=5
     )
 
-    if uploaded_file:
-        # Save to temp file
-        suffix = Path(uploaded_file.name).suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(uploaded_file.getvalue())
-            tmp_path = tmp.name
+    st.divider()
 
-        st.success(f"Uploaded: {uploaded_file.name}")
-        st.info(f"Size: {uploaded_file.size / 1024 / 1024:.2f} MB")
-
-        # Process button
-        if st.button("🚀 Process Lecture", type="primary", disabled=st.session_state.processing):
-            st.session_state.processing = True
-
-            # Progress message
-            progress_placeholder = st.empty()
-
-            with st.spinner("Processing audio..."):
-                # Ensure output directory exists
-                os.makedirs("./output", exist_ok=True)
-
-                # Prepare initial state
-                initial_state: LecturePipelineState = {
-                    "audio_path": tmp_path,
-                    "max_chunk_size_mb": max_chunk_size,
-                    "max_duration_minutes": max_duration,
-                    "preprocessed_chunks": [],
-                    "transcription_segments": [],
-                    "speaker_aware_transcript": "",
-                    "lecture_notes": "",
-                    "task_summary": "",
-                    "pdf_path": None,
-                    "messages": [],
-                    "status": "idle",
-                    "error_message": None,
-                }
-
-                # Run the pipeline
-                try:
-                    progress_placeholder.info("⏳ Preprocessing audio...")
-                    result = st.session_state.pipeline_graph.invoke(
-                        initial_state,
-                        config={"configurable": {"thread_id": "lecture-session"}}
-                    )
-                    st.session_state.results = result
-                    progress_placeholder.empty()
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-                    st.session_state.results = {"status": "error", "error_message": str(e)}
-                finally:
-                    st.session_state.processing = False
-                    # Cleanup temp file
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
-
-    # Progress display
-    if st.session_state.processing:
-        st.progress(0.2, text="Preprocessing audio chunks...")
-        st.progress(0.4, text="Transcribing with Whisper...")
-        st.progress(0.6, text="Processing with AI agent...")
-        st.progress(0.8, text="Generating PDF...")
-
-# Right column: Results
-with col2:
-    st.header("📋 Results")
-
-    if st.session_state.results:
-        results = st.session_state.results
-
-        # Status
-        status = results.get("status", "unknown")
-        if status == "complete":
-            st.success("✅ Processing complete!")
-        elif status == "error":
-            st.error(f"❌ Error: {results.get('error_message', 'Unknown error')}")
+    # Process button
+    if st.button("🚀 Process Lecture", type="primary"):
+        if input_method == "📤 Upload Audio" and not uploaded_file:
+            st.error("⚠️ Please upload a file")
+        elif input_method == "🎙️ Record Voice" and not audio_data:
+            st.error("⚠️ Please record your voice")
         else:
-            st.info(f"Status: {status}")
-
-        # Tabs for different outputs
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📝 Raw Transcript",
-            "🎤 Speaker Transcript",
-            "📚 Lecture Notes",
-            "📄 PDF"
-        ])
-
-        with tab1:
-            st.subheader("Raw Whisper Transcript")
-            if results.get("transcription_segments"):
-                for seg in results["transcription_segments"]:
-                    st.text(f"[{seg['start']:.1f}s-{seg['end']:.1f}s] {seg['speaker']}: {seg['text']}")
+            # Save audio
+            if input_method == "📤 Upload Audio":
+                saved_path = save_audio_file(uploaded_file, voice_name = None)
+                input_desc = f"uploaded file: `{uploaded_file.name}`"
             else:
-                st.info("No transcript segments available")
+                if not voice_name:
+                    st.error("⚠️ Please provide a name")
+                # Detect format from name or default
+                fmt = "mp3" if hasattr(audio_data, 'name') and str(audio_data.name).endswith('.mp3') else "webm"
+                saved_path = save_recorded_audio(audio_data, voice_name, fmt)
+                input_desc = "recorded voice"
 
-        with tab2:
-            st.subheader("Speaker-Aware Transcript")
-            if results.get("speaker_aware_transcript"):
-                st.text_area("", results["speaker_aware_transcript"], height=400, label_visibility="collapsed")
-            else:
-                st.info("Not yet processed")
+            st.session_state.raw_file_path = saved_path
+            print('hahaha', st.session_state.raw_file_path)
 
-        with tab3:
-            st.subheader("Generated Lecture Notes")
-            if results.get("lecture_notes"):
-                st.markdown(results["lecture_notes"])
-            else:
-                st.info("Not yet generated")
+            aggregate_file_path = process_raw_data(raw_path=st.session_state.raw_file_path, max_size_mb=max_chunk_size)
 
-            st.divider()
 
-            st.subheader("Task Summary")
-            if results.get("task_summary"):
-                st.markdown(results["task_summary"])
-            else:
-                st.info("No tasks extracted")
+    st.divider()
 
-        with tab4:
-            st.subheader("PDF Report")
-            if results.get("pdf_path") and os.path.exists(results["pdf_path"]):
-                with open(results["pdf_path"], "rb") as f:
+    # Existing projects
+    st.subheader("📁 Projects")
+    voice_folders = get_voice_folders()
+    if voice_folders:
+        for vf in voice_folders:
+            paths = get_summary_path(vf)
+            done = paths["summary_md"].exists()
+            st.write(f"{'✅' if done else '⏳'} {vf}")
+    else:
+        st.info("No projects yet")
+
+    # Refresh status
+    if st.button("🔄 Refresh Status"):
+        initialize_notepad(LECTURE_RECORDING_DIR, STATUS_FILE)
+        st.success("Status updated")
+
+    # View status file
+    if Path(STATUS_FILE).exists():
+        with st.expander("📋 Status File"):
+            st.markdown(read_markdown(STATUS_FILE))
+
+
+# ─────────────────────────────────────────────
+# Main Page: Chat
+# ─────────────────────────────────────────────
+st.title("🎓 Lecture AI")
+
+# Display chat history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# Chat input
+if prompt := st.chat_input("Ask about the lecture..."):
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    user_message = {"messages": [{"role": "user", "content": prompt}]}
+
+    with st.chat_message("assistant"):
+        response = st.session_state.agent.invoke(user_message, config= {"configurable": {"thread_id": st.session_state.thread_id}})
+        response_text = response['messages'][-1].content[-1]['text']
+        st.markdown(response_text)
+        st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+
+# ─────────────────────────────────────────────
+# Main Page: Summary (below chat or use expander)
+# ─────────────────────────────────────────────
+if voice_folders := get_voice_folders():
+    with st.expander("📚 View Lecture Summaries"):
+        selected = st.selectbox("Select a lecture:", voice_folders, key="summary_select")
+        paths = get_summary_path(selected)
+
+        if paths["summary_md"].exists():
+            st.markdown(read_markdown(str(paths["summary_md"])))
+
+            if paths["summary_pdf"].exists():
+                with open(paths["summary_pdf"], "rb") as f:
                     st.download_button(
-                        label="📥 Download PDF Report",
+                        label="📥 Download as PDF",
                         data=f,
-                        file_name="lecture_notes.pdf",
+                        file_name=paths["summary_pdf"].name,
                         mime="application/pdf"
                     )
-            else:
-                st.info("PDF not yet generated")
-    else:
-        st.info("👈 Upload an audio file and click Process to begin")
-
-# Footer
-st.divider()
-st.caption("Lecture AI - Powered by LangGraph, DeepAgents, and OpenAI Whisper")
+        else:
+            st.warning(f"Summary not yet available for **{selected}**")

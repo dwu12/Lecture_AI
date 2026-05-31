@@ -2,12 +2,13 @@ import os
 from pydub import AudioSegment
 
 
-def separate_audio_chunk(audio_path: str, max_size_mb: int = 20) -> list[str]:
+def separate_audio_chunk(audio_path: str, output_dir: str, max_size_mb: int = 5) -> list[str]:
     """
     Split or convert audio file based on size.
 
     Args:
         audio_path: Path to the input audio file
+        output_dir: Path to store the chunk file 
         max_size_mb: Maximum chunk size in MB (default 20)
 
     Returns:
@@ -19,7 +20,7 @@ def separate_audio_chunk(audio_path: str, max_size_mb: int = 20) -> list[str]:
     file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
 
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
-    output_dir = os.path.dirname(audio_path) or "."
+    #output_dir = os.path.dirname(audio_path) or "."
 
     audio = AudioSegment.from_file(audio_path)
     total_duration_ms = len(audio)
@@ -41,7 +42,7 @@ def separate_audio_chunk(audio_path: str, max_size_mb: int = 20) -> list[str]:
         start = i * chunk_duration_ms
         end = start + chunk_duration_ms if i < num_chunks - 1 else total_duration_ms
         chunk = audio[start:end]
-        chunk_path = os.path.join(output_dir, f"{base_name}_chunk_{i + 1}.mp3")
+        chunk_path = os.path.join(output_dir,f"{base_name}_chunk_{i + 1}.mp3")
         chunk.export(chunk_path, format="mp3")
         chunks.append(chunk_path)
 

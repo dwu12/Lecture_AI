@@ -79,3 +79,17 @@ streamlit run app.py
 - `pydub` - Audio file processing
 - `reportlab` - PDF generation
 - `streamlit` - Web UI
+
+
+  
+  lectures/                                                                                                                                                                                                               
+  ├── lecun_world_model/
+  │   ├── raw/lecture.mp3
+  │   ├── chunks/chunk_1.mp3, chunk_2.mp3
+  │   ├── asr/chunk_1.json, chunk_2.json                                                                                                                                                                                  
+  │   ├── combined.json      ← could be ephemeral
+  │   ├── cleaned.json                                                                                                                                                                                                    
+  │   ├── notes.md
+  │   └── output.pdf                                                                                                                                                                                                      
+  ├── another_lecture/
+  │   └── ...     

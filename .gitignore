@@ -1,5 +1,8 @@
 .env
 .venv
-src/audio_processing/
-src/assets/
-src/test/
+src/audio_processing/*
+src/assets/*
+src/test/*
+__pycache__/
+input_audio/*
+test_file.ipynb
