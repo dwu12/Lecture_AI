@@ -1,14 +1,10 @@
 import streamlit as st
-import tempfile
-import os
 import io
-import base64
 from pathlib import Path
-from datetime import datetime
 from pydub import AudioSegment
 
 
-from src.utils import initialize_notepad, read_markdown, process_raw_data
+from src.utils import initialize_notepad, process_raw_data, process_info
 from src.agent import get_agent
 import uuid 
 
@@ -22,7 +18,7 @@ st.set_page_config(
 )
 
 LECTURE_RECORDING_DIR = "./lecture_recording"
-STATUS_FILE = "./lecture_recording_status.md"
+STATUS_FILE = "./lecture_recording/note_pad.md"
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -117,13 +113,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
     st.session_state.thread_id = str(uuid.uuid4()).replace('-',"")
     st.session_state.agent = get_agent()
-
-if "processing_done" not in st.session_state:
-    st.session_state.processing_done = {}
-
-if "current_voice_name" not in st.session_state:
-    st.session_state.current_voice_name = None
-
+    st.session_state.aggregate_file_path = None 
 
 # ─────────────────────────────────────────────
 # Sidebar
@@ -178,7 +168,7 @@ with st.sidebar:
     st.divider()
 
     # Process button
-    if st.button("🚀 Process Lecture", type="primary"):
+    if st.button("🚀 Pre-Process Lecture (ASR)", type="primary"):
         if input_method == "📤 Upload Audio" and not uploaded_file:
             st.error("⚠️ Please upload a file")
         elif input_method == "🎙️ Record Voice" and not audio_data:
@@ -197,9 +187,9 @@ with st.sidebar:
                 input_desc = "recorded voice"
 
             st.session_state.raw_file_path = saved_path
-            print('hahaha', st.session_state.raw_file_path)
+            print('Raw File Path:', st.session_state.raw_file_path)
 
-            aggregate_file_path = process_raw_data(raw_path=st.session_state.raw_file_path, max_size_mb=max_chunk_size)
+            st.session_state.aggregate_file_path = process_raw_data(raw_path=st.session_state.raw_file_path, max_size_mb=max_chunk_size)
 
 
     st.divider()
@@ -220,54 +210,44 @@ with st.sidebar:
         initialize_notepad(LECTURE_RECORDING_DIR, STATUS_FILE)
         st.success("Status updated")
 
-    # View status file
-    if Path(STATUS_FILE).exists():
-        with st.expander("📋 Status File"):
-            st.markdown(read_markdown(STATUS_FILE))
+    st.divider()
+
+    # Navigation
+    st.subheader("🗂️ Views")
+    st.page_link("pages/summary.py", label="📚 Summaries")
+    st.page_link("pages/status.py", label="📋 Status")
 
 
 # ─────────────────────────────────────────────
-# Main Page: Chat
+# Main Page
 # ─────────────────────────────────────────────
 st.title("🎓 Lecture AI")
 
-# Display chat history
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# ── Chat (outside tabs — renders above tabs in document order) ──
+chat_history = st.container()
+with chat_history:
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-# Chat input
 if prompt := st.chat_input("Ask about the lecture..."):
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    user_message = {"messages": [{"role": "user", "content": prompt}]}
+    with chat_history:
+        st.chat_message("user").markdown(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-    with st.chat_message("assistant"):
-        response = st.session_state.agent.invoke(user_message, config= {"configurable": {"thread_id": st.session_state.thread_id}})
-        response_text = response['messages'][-1].content[-1]['text']
-        st.markdown(response_text)
-        st.session_state.messages.append({"role": "assistant", "content": response_text})
-
-
-# ─────────────────────────────────────────────
-# Main Page: Summary (below chat or use expander)
-# ─────────────────────────────────────────────
-if voice_folders := get_voice_folders():
-    with st.expander("📚 View Lecture Summaries"):
-        selected = st.selectbox("Select a lecture:", voice_folders, key="summary_select")
-        paths = get_summary_path(selected)
-
-        if paths["summary_md"].exists():
-            st.markdown(read_markdown(str(paths["summary_md"])))
-
-            if paths["summary_pdf"].exists():
-                with open(paths["summary_pdf"], "rb") as f:
-                    st.download_button(
-                        label="📥 Download as PDF",
-                        data=f,
-                        file_name=paths["summary_pdf"].name,
-                        mime="application/pdf"
-                    )
+        if st.session_state.aggregate_file_path:
+            aggregate_path, format_path, summary_path = process_info(st.session_state.aggregate_file_path)
+            prompt_addition = f"\nPlease Note that the current upload voice file is in: {aggregate_path}, the formatted ASR will be stored in {format_path}, the keynote summary will be stored in {summary_path} "
         else:
-            st.warning(f"Summary not yet available for **{selected}**")
+            prompt_addition = f"\nCurrently no voice has been upload or record, please check with the notepad if user ask to process any voice files"
+
+        user_message = {"messages": [{"role": "user", "content": prompt + prompt_addition}]}
+
+        with st.chat_message("assistant"):
+            response = st.session_state.agent.invoke(user_message, config={"configurable": {"thread_id": st.session_state.thread_id}})
+            response_text = response['messages'][-1].content[-1]['text']
+
+            print(response)
+            st.markdown(response_text)
+            st.session_state.messages.append({"role": "assistant", "content": response_text})
+

@@ -153,6 +153,24 @@ def initialize_notepad(lecture_recording_dir: str, output_path: str | None = Non
     return str(output_path)
 
 
+def postprocess_notepad(file_path: str) -> str:
+    """
+    Post-process the notepad markdown content to replace full paths with just filenames.
+    E.g. `./lecture_recording/lecun/raw/test.mp3` → `test.mp3`
+    Returns the processed content as a string.
+    """
+    content = Path(file_path).read_text()
+    lines = content.split('\n')
+    processed_lines = []
+    for line in lines:
+        def replace_path(match):
+            path = match.group(1)
+            return f"`{Path(path).name}`"
+        line = re.sub(r'`([^`]+)`', replace_path, line)
+        processed_lines.append(line)
+    return '\n'.join(processed_lines)
+
+
 def read_markdown(file_path: str) -> str:
     """
     Read a markdown file and return its content.
@@ -196,3 +214,21 @@ def process_raw_data(raw_path = './lecture_recording/test_lecture/raw/test_lectu
     initialize_notepad(lecture_recording_dir = './lecture_recording/')
 
     return aggregate_output_path
+
+
+def process_info(aggregated_asr_markdown_path, folder_name = None): 
+    ''' 
+    Given the ASR aggregate file, return both format file path and summary file path 
+    '''
+    if aggregated_asr_markdown_path.startswith('./'):
+        aggregated_asr_markdown_path = aggregated_asr_markdown_path[1:]
+
+    output_dir = aggregated_asr_markdown_path.split('/asr')[0]
+    
+    if not folder_name: 
+        folder_name = aggregated_asr_markdown_path.split('/')[2]
+    
+    formatted_path = output_dir + f'/{folder_name}_formatted.md'
+    summary_path = output_dir + f'/{folder_name}_summary.md'
+
+    return aggregated_asr_markdown_path, formatted_path, summary_path
