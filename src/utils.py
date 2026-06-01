@@ -186,49 +186,56 @@ def read_markdown(file_path: str) -> str:
 
 def process_raw_data(raw_path = './lecture_recording/test_lecture/raw/test_lecture_raw.webm', max_size_mb = 5):
     """
-    Process raw data, steps: 
+    Process raw data, steps:
     1. chunk raw audio if the size is reach to max_size_mb
     2. run chunks in parallel to get ASR
     3. aggregate ASR
     4. create note pad for central file location
     """
-    
-    chunk_output_dir = raw_path.split('/raw')[0] + '/chunks/'
-    asr_output_dir = raw_path.split('/raw')[0] + '/asr/'
-    aggregate_output_path = raw_path.split('/raw')[0] + '/asr/' + raw_path.split('/')[-1].split('.')[0] + '_aggregated.md'
+    raw_path = Path(raw_path)
+    lecture_dir = raw_path.parent.parent  # go up from raw/ to lecture root
 
-    audio_chunks = separate_audio_chunk(audio_path = raw_path, 
-                                        output_dir = chunk_output_dir, 
-                                        max_size_mb = max_size_mb)
-    
-    audio_asr_path = [i.split('chunks')[0] + 'asr/' + i.split('/')[-1].split('.mp3')[0]+'_asr.md' for i in audio_chunks]
-    chunks_with_asr = list(zip(audio_chunks, audio_asr_path)) 
-                                                                                                                                                                                             
+    chunk_output_dir = lecture_dir / 'chunks'
+    asr_output_dir = lecture_dir / 'asr'
+    aggregate_output_path = asr_output_dir / f"{raw_path.stem}_aggregated.md"
+
+    audio_chunks = separate_audio_chunk(
+        audio_path=str(raw_path),
+        output_dir=str(chunk_output_dir),
+        max_size_mb=max_size_mb
+    )
+
+    audio_asr_path = [
+        str(asr_output_dir / f"{Path(chunk).stem}_asr.md") for chunk in audio_chunks
+    ]
+    chunks_with_asr = list(zip(audio_chunks, audio_asr_path))
+
     with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [                                                                                                                                                                            
+        futures = [
             executor.submit(transcribe_audio_diarized, chunk, output_path)
-            for chunk, output_path in chunks_with_asr                                                                                                                                           
+            for chunk, output_path in chunks_with_asr
         ]
-    
-    aggregate_asr_files(asr_output_dir, output_path =aggregate_output_path )
-    initialize_notepad(lecture_recording_dir = './lecture_recording/')
 
-    return aggregate_output_path
+    aggregate_asr_files(str(asr_output_dir), output_path=str(aggregate_output_path))
+    initialize_notepad(lecture_recording_dir=str(lecture_dir.parent))
+
+    return str(aggregate_output_path)
 
 
-def process_info(aggregated_asr_markdown_path, folder_name = None): 
-    ''' 
-    Given the ASR aggregate file, return both format file path and summary file path 
+def process_info(aggregated_asr_markdown_path, folder_name = None):
     '''
-    if aggregated_asr_markdown_path.startswith('./'):
-        aggregated_asr_markdown_path = aggregated_asr_markdown_path[1:]
+    Given the ASR aggregate file, return both format file path and summary file path
+    '''
+    aggregated_path = Path(aggregated_asr_markdown_path)
 
-    output_dir = aggregated_asr_markdown_path.split('/asr')[0]
-    
-    if not folder_name: 
-        folder_name = aggregated_asr_markdown_path.split('/')[2]
-    
-    formatted_path = output_dir + f'/{folder_name}_formatted.md'
-    summary_path = output_dir + f'/{folder_name}_summary.md'
+    # Go up from asr/lecun_aggregated.md -> lecture root lecun/
+    output_dir = aggregated_path.parent.parent
 
-    return aggregated_asr_markdown_path, formatted_path, summary_path
+    if not folder_name:
+        # The lecture folder is the parent of output_dir
+        folder_name = output_dir.name
+
+    formatted_path = output_dir / f'{folder_name}_formatted.md'
+    summary_path = output_dir / f'{folder_name}_summary.md'
+
+    return str(aggregated_path), str(formatted_path), str(summary_path)
